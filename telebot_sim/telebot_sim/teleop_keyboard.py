@@ -33,8 +33,8 @@ class TeleopKeyboard(Node):
         self.pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.lin = 0.0
         self.ang = 0.0
-        # republish at 10 Hz even without keypresses; the diff drive plugin
-        # stops the robot if cmd_vel goes quiet, which reads as stuttering
+        # republish at 10 Hz even without keypresses; safety_controller treats
+        # a quiet command topic as a dead link and stops the robot
         self.timer = self.create_timer(0.1, self.publish_cmd)
 
     def publish_cmd(self):

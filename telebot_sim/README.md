@@ -152,7 +152,7 @@ Start the sim with the safety layer on and teleop remapped (see Run). The robot 
 
 - **LaserScan in the wrong frame in RViz**: the ray sensor plugin's `<frame_name>` must exactly match the URDF link name (`lidar_link`). If they differ, RViz drops or misplaces the scan.
 - **`/scan` doesn't exist**: the plugin publishes on a private `~/out` topic by default. The `<remapping>~/out:=scan</remapping>` line in the xacro is what gives you `/scan`.
-- **Robot stutters while driving**: the diff drive plugin has a command timeout. That's why the teleop node republishes the last command at 10 Hz instead of only on keypress.
+- **Robot keeps driving after teleop dies**: the Gazebo diff drive plugin has no command timeout, it holds the last `cmd_vel` forever (tested: kill a `ros2 topic pub` mid-drive with `enable_safety:=false` and the robot keeps going). That's what the `safety_controller` watchdog is for, and why teleop republishes the last command at 10 Hz instead of only on keypress: a quiet topic reads as a dead link.
 - **No odom->base_link transform**: `robot_state_publisher` only publishes the static tree from the URDF. The odom transform comes from `<publish_odom_tf>true</publish_odom_tf>` in the diff drive plugin.
 - **use_sim_time**: nodes that consume TF or timestamps must run with `use_sim_time: true` or lookups fail with extrapolation errors once Gazebo clock and wall clock drift apart.
 - **Robot tips forward on spawn**: check the caster z-offset vs wheel radius; the chassis should be level. Caster friction is zeroed (`mu1/mu2 = 0`) so it slides rather than fighting the drive wheels.
