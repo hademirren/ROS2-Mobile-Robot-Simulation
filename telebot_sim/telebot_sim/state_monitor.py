@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Subscribes to /scan and /odom, logs robot state at 1 Hz and warns
-when an obstacle enters the safety radius. This is the 'monitoring'
-half of the teleop setup: drive in one terminal, watch state here.
+"""Logs pose, speed and nearest obstacle once a second from /odom and /scan.
+
+Warns when anything is inside SAFETY_RADIUS.
 """
 import math
 
@@ -26,7 +26,7 @@ class StateMonitor(Node):
         self.create_timer(1.0, self.report)
 
     def on_scan(self, msg: LaserScan):
-        # inf/0.0 readings mean "nothing in range", not "something at 0 m"
+        # range check drops inf/nan, which mean "nothing in range"
         best_r, best_i = None, None
         for i, r in enumerate(msg.ranges):
             if msg.range_min <= r <= msg.range_max:

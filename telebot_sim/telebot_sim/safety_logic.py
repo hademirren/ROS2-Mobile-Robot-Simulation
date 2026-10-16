@@ -1,10 +1,10 @@
 """Decision logic for safety_controller.
 
-Kept free of ROS imports so it can be unit tested with plain pytest.
+No ROS imports, so it can be unit tested with plain pytest.
 """
 import math
 from dataclasses import dataclass
-from typing import NamedTuple, Optional, Sequence
+from typing import NamedTuple
 
 CLEAR = 'CLEAR'
 SLOWING = 'SLOWING'
@@ -14,16 +14,13 @@ TIMEOUT = 'TIMEOUT'
 
 @dataclass(frozen=True)
 class SafetyParams:
-    stop_distance: float = 0.5     # m, forward motion blocked below this
-    slow_distance: float = 1.0     # m, forward speed scaled down below this
-    front_angle_deg: float = 30.0  # half-width of the front sector
+    stop_distance: float = 0.5     # m, block forward motion below this
+    slow_distance: float = 1.0     # m, start slowing down below this
+    front_angle_deg: float = 30.0  # look +/- this many degrees ahead
     cmd_timeout: float = 0.3       # s without teleop before we stop
     scan_timeout: float = 0.5      # s without a scan before forward is blocked
-    # without a floor the robot only approaches stop_distance asymptotically
-    # and never actually reaches BLOCKED
-    creep_speed: float = 0.05      # m/s
-    # margin needed to relax a state, so readings near a threshold don't flicker
-    hysteresis: float = 0.05       # m
+    creep_speed: float = 0.05      # m/s, slowest speed while slowing
+    hysteresis: float = 0.05       # m, extra room needed to leave a state
 
     def __post_init__(self):
         if not 0.0 < self.stop_distance < self.slow_distance:
@@ -43,37 +40,33 @@ class Decision(NamedTuple):
     reason: str
 
 
-def front_min_range(ranges: Sequence[float], angle_min: float,
-                    angle_increment: float, range_min: float,
-                    range_max: float, half_angle: float) -> Optional[float]:
-    """Closest valid range within +/-half_angle (rad) of straight ahead.
-
-    Returns None if nothing valid is in the sector.
-    """
-    best = None
+def front_min_range(ranges, angle_min, angle_increment,
+                    range_min, range_max, half_angle):
+    """Closest valid reading within +/-half_angle of straight ahead, or None."""
+    closest = None
     for i, r in enumerate(ranges):
-        # inf/nan or out-of-spec returns say nothing about distance
+        # skip inf, nan and out-of-spec readings
         if not math.isfinite(r) or r < range_min or r > range_max:
             continue
-        a = angle_min + i * angle_increment
-        # wrap so 0..2pi scanners work the same as -pi..pi ones
-        a = math.atan2(math.sin(a), math.cos(a))
-        if abs(a) <= half_angle and (best is None or r < best):
-            best = r
-    return best
+        angle = angle_min + i * angle_increment
+        angle = math.atan2(math.sin(angle), math.cos(angle))  # wrap to -pi..pi
+        if abs(angle) <= half_angle and (closest is None or r < closest):
+            closest = r
+    return closest
 
 
-def _fresh(age: Optional[float], timeout: float) -> bool:
-    # negative age means the clock jumped back; don't trust it
+def is_fresh(age, timeout):
+    # None = never received, negative = clock jumped back
     return age is not None and 0.0 <= age <= timeout
 
 
-def classify(front_range: Optional[float], prev_state: Optional[str],
-             p: SafetyParams) -> str:
+def classify(front_range, prev_state, p):
+    """CLEAR, SLOWING or BLOCKED based on the closest thing ahead."""
     if front_range is None:
         return CLEAR
     stop = p.stop_distance
     slow = p.slow_distance
+    # hysteresis: leaving a state needs a bit more room than entering it
     if prev_state == BLOCKED:
         stop += p.hysteresis
     if prev_state in (BLOCKED, SLOWING):
@@ -85,46 +78,36 @@ def classify(front_range: Optional[float], prev_state: Optional[str],
     return CLEAR
 
 
-def decide(linear: float, angular: float, front_range: Optional[float],
-           cmd_age: Optional[float], scan_age: Optional[float],
-           prev_state: Optional[str], p: SafetyParams) -> Decision:
+def decide(linear, angular, front_range, cmd_age, scan_age, prev_state, p):
     """Filter one teleop command.
 
-    Ages are seconds since the last message, or None if none arrived yet.
-    Only forward motion is ever limited; turning and reversing pass through
-    so the operator can always steer away from an obstacle.
+    cmd_age / scan_age: seconds since the last message, None if none yet.
+    Only forward motion is limited, so the operator can always turn or reverse.
     """
-    if not _fresh(cmd_age, p.cmd_timeout):
-        # replaying a stale command is how a dropped link drives into a wall
-        if cmd_age is None:
-            reason = 'no teleop command received yet, holding zero velocity'
-        else:
-            reason = f'no teleop command for {cmd_age:.2f} s, holding zero velocity'
-        return Decision(0.0, 0.0, TIMEOUT, reason)
+    # 1. teleop went quiet: stop everything
+    if not is_fresh(cmd_age, p.cmd_timeout):
+        return Decision(0.0, 0.0, TIMEOUT, 'no recent teleop command, stopping')
 
-    if not _fresh(scan_age, p.scan_timeout):
-        # can't see ahead, so don't drive ahead
+    # 2. work out the state
+    if not is_fresh(scan_age, p.scan_timeout):
         state = BLOCKED
-        if scan_age is None:
-            reason = 'no scan received yet, forward motion blocked'
-        else:
-            reason = f'no scan for {scan_age:.2f} s, forward motion blocked'
+        reason = 'no recent lidar scan, forward blocked'
     else:
         state = classify(front_range, prev_state, p)
-        if state == BLOCKED:
-            reason = (f'obstacle {front_range:.2f} m ahead, forward motion '
-                      'blocked (turn/reverse allowed)')
-        elif state == SLOWING:
-            reason = f'obstacle {front_range:.2f} m ahead, limiting forward speed'
+        if front_range is None:
+            reason = 'nothing ahead'
         else:
-            reason = f'nothing within {p.slow_distance:.2f} m ahead'
+            reason = f'closest obstacle ahead {front_range:.2f} m'
 
-    out = linear
+    # 3. limit forward speed only
     if linear > 0.0:
         if state == BLOCKED:
-            out = 0.0
+            linear = 0.0
         elif state == SLOWING:
-            span = p.slow_distance - p.stop_distance
-            scale = min(max((front_range - p.stop_distance) / span, 0.0), 1.0)
-            out = min(linear, max(linear * scale, p.creep_speed))
-    return Decision(out, angular, state, reason)
+            # 0 at stop_distance, 1 at slow_distance
+            scale = (front_range - p.stop_distance) / (p.slow_distance - p.stop_distance)
+            scale = min(max(scale, 0.0), 1.0)
+            # creep floor, or we'd never actually reach the stop line
+            linear = min(linear, max(linear * scale, p.creep_speed))
+
+    return Decision(linear, angular, state, reason)
