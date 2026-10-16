@@ -2,8 +2,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 import xacro
 
@@ -46,4 +48,20 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}],
     )
 
-    return LaunchDescription([gazebo, rsp, spawn, monitor])
+    enable_safety_arg = DeclareLaunchArgument(
+        'enable_safety', default_value='true',
+        description='Start safety_controller between teleop (cmd_vel_raw) and the '
+                    'diff drive (cmd_vel). Teleop must then be run with '
+                    '--ros-args -r cmd_vel:=cmd_vel_raw')
+
+    # teleop isn't launched here (it needs its own tty), so its remap to
+    # cmd_vel_raw happens on the teleop command line instead
+    safety = Node(
+        package='telebot_sim',
+        executable='safety_controller',
+        output='screen',
+        parameters=[{'use_sim_time': True}],
+        condition=IfCondition(LaunchConfiguration('enable_safety')),
+    )
+
+    return LaunchDescription([enable_safety_arg, gazebo, rsp, spawn, monitor, safety])
