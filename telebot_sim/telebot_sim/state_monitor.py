@@ -73,7 +73,9 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # Ctrl-C may already have shut the context down (Humble raises otherwise)
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
