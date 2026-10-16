@@ -64,7 +64,7 @@ def front_min_range(ranges: Sequence[float], angle_min: float,
 
 
 def _fresh(age: Optional[float], timeout: float) -> bool:
-    # negative age means the clock jumped back (sim reset); don't trust it
+    # negative age means the clock jumped back; don't trust it
     return age is not None and 0.0 <= age <= timeout
 
 

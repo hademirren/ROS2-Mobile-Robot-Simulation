@@ -101,6 +101,7 @@ What it does, every 1/`publish_rate` seconds:
 - Ranges that are inf, nan or outside `range_min`/`range_max` are ignored. No valid reading in the sector counts as clear.
 - State changes are logged once per change, not per message (`BLOCKED`/`TIMEOUT` as warnings).
 - Distances are measured from the lidar, which sits 0.1 m behind the front of the chassis. With the defaults the chassis stops about 0.4 m short of `box_1`.
+- Timeouts run on a monotonic wall clock, not sim time. Teleop publishes on wall time, and Gazebo's `/clock` only ticks at 10 Hz, which is coarse enough to make a 0.3 s watchdog trip falsely.
 - The decision logic lives in `safety_logic.py` with no ROS imports, so it is unit tested with plain pytest.
 
 Parameters:
@@ -119,7 +120,7 @@ Parameters:
 To try other values, launch with the safety layer off and run the node yourself:
 ```bash
 ros2 launch telebot_sim sim.launch.py enable_safety:=false
-ros2 run telebot_sim safety_controller --ros-args -p use_sim_time:=true -p stop_distance:=0.7 -p slow_distance:=1.5
+ros2 run telebot_sim safety_controller --ros-args -p stop_distance:=0.7 -p slow_distance:=1.5
 ```
 
 Limitations: it checks a front sector of a single 2D scan plane, not the robot footprint, so a corner can still clip an obstacle while turning close to it, reversing is not checked, and anything above or below the scan plane is invisible.
@@ -143,7 +144,7 @@ Start the sim with the safety layer on and teleop remapped (see Run). The robot 
 | 5 | Reverse allowed while blocked | Robot backs away, log goes `SLOWING` then `CLEAR` | While blocked, press `space` then `s` |
 | 6 | Teleop watchdog | `TIMEOUT` within 0.3 s, robot stops even though the last command was "forward" | Quit teleop (`q`), then `ros2 topic pub -r 10 /cmd_vel_raw geometry_msgs/msg/Twist "{linear: {x: 0.2}}"` and Ctrl-C it while the robot is moving |
 | 7 | inf/nan ranges | Nothing in range reads as `CLEAR`, not as an obstacle at 0 m | Turn so the front sector faces open space (most rays return inf). Edge cases are covered by `test_front_min_*` unit tests |
-| 8 | Lidar lost | `BLOCKED: no scan received yet`, turning and reversing still work | `ros2 launch telebot_sim sim.launch.py enable_safety:=false`, then `ros2 run telebot_sim safety_controller --ros-args -p use_sim_time:=true -r scan:=scan_dead` |
+| 8 | Lidar lost | `BLOCKED: no scan received yet`, turning and reversing still work | `ros2 launch telebot_sim sim.launch.py enable_safety:=false`, then `ros2 run telebot_sim safety_controller --ros-args -r scan:=scan_dead` |
 | 9 | Teleop not remapped | Warning that another publisher on `/cmd_vel` is bypassing the safety layer | Run `ros2 run telebot_sim teleop_keyboard` without the remap while safety is on |
 | 10 | Safety disabled | Original behaviour, robot drives into `box_1` | `enable_safety:=false` and teleop without the remap |
 

@@ -55,12 +55,13 @@ def generate_launch_description():
                     '--ros-args -r cmd_vel:=cmd_vel_raw')
 
     # teleop isn't launched here (it needs its own tty), so its remap to
-    # cmd_vel_raw happens on the teleop command line instead
+    # cmd_vel_raw happens on the teleop command line instead.
+    # No use_sim_time: the node uses no TF or stamps, and its watchdog has to
+    # run on the same wall clock teleop publishes on.
     safety = Node(
         package='telebot_sim',
         executable='safety_controller',
         output='screen',
-        parameters=[{'use_sim_time': True}],
         condition=IfCondition(LaunchConfiguration('enable_safety')),
     )
 

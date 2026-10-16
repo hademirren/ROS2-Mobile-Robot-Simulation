@@ -11,6 +11,7 @@ Teleop must be remapped so it doesn't bypass this node:
     ros2 run telebot_sim teleop_keyboard --ros-args -r cmd_vel:=cmd_vel_raw
 """
 import math
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -67,21 +68,24 @@ class SafetyController(Node):
         desc = ParameterDescriptor(dynamic_typing=True)
         return float(self.declare_parameter(name, default, desc).value)
 
+    # Ages use a monotonic wall clock, not sim time: teleop publishes on wall
+    # time, and /clock only ticks at 10 Hz, which made the 0.3 s watchdog trip
+    # falsely while teleop was still sending.
     def _age(self, stamp, now):
-        return None if stamp is None else (now - stamp).nanoseconds * 1e-9
+        return None if stamp is None else now - stamp
 
     def on_cmd(self, msg: Twist):
         self.cmd = msg
-        self.last_cmd_time = self.get_clock().now()
+        self.last_cmd_time = time.monotonic()
 
     def on_scan(self, msg: LaserScan):
         self.front_range = front_min_range(
             msg.ranges, msg.angle_min, msg.angle_increment,
             msg.range_min, msg.range_max, self.half_angle)
-        self.last_scan_time = self.get_clock().now()
+        self.last_scan_time = time.monotonic()
 
     def step(self):
-        now = self.get_clock().now()
+        now = time.monotonic()
         d = decide(self.cmd.linear.x, self.cmd.angular.z, self.front_range,
                    self._age(self.last_cmd_time, now),
                    self._age(self.last_scan_time, now),
