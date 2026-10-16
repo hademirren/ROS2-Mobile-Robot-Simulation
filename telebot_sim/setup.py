@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'teleop_keyboard = telebot_sim.teleop_keyboard:main',
             'state_monitor = telebot_sim.state_monitor:main',
+            'safety_controller = telebot_sim.safety_controller:main',
         ],
     },
 )
