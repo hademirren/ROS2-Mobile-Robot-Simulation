@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<sdf version="1.6">
+  <world name="simple">
+    <include><uri>model://ground_plane</uri></include>
+    <include><uri>model://sun</uri></include>
+
+    <!-- a few boxes so the lidar has something to see and teleop has something to avoid -->
+    <model name="box_1">
+      <static>true</static>
+      <pose>2 0 0.25 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.5 0.5 0.5</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.5 0.5 0.5</size></box></geometry></visual>
+      </link>
+    </model>
+
+    <model name="box_2">
+      <static>true</static>
+      <pose>0 2.5 0.25 0 0 0.6</pose>
+      <link name="link">
+        <collision name="col"><geometry><box><size>0.8 0.4 0.5</size></box></geometry></collision>
+        <visual name="vis"><geometry><box><size>0.8 0.4 0.5</size></box></geometry></visual>
+      </link>
+    </model>
+
+    <model name="cylinder_1">
+      <static>true</static>
+      <pose>-2 -1.5 0.3 0 0 0</pose>
+      <link name="link">
+        <collision name="col"><geometry><cylinder><radius>0.3</radius><length>0.6</length></cylinder></geometry></collision>
+        <visual name="vis"><geometry><cylinder><radius>0.3</radius><length>0.6</length></cylinder></geometry></visual>
+      </link>
+    </model>
+  </world>
+</sdf>
